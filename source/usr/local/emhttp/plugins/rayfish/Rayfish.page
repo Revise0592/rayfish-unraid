@@ -28,9 +28,10 @@ _(Enable Rayfish)_:
   <?=mk_option($cfg['SERVICE'], 'disable', _('No'))?>
   </select>
 
-:rayfish_enable_help:
+:rayfish_enable_plug:
 > Runs the Rayfish mesh VPN daemon (`ray daemon`) whenever the server boots. Your node identity and
 > network memberships are stored on the flash drive under `/boot/config/plugins/rayfish/state`.
+
 :end
 
 _(Daemon status)_:
