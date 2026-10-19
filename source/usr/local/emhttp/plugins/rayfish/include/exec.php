@@ -84,7 +84,9 @@ case 'status':
   $running = daemon_running();
   $version = is_executable(RAY) ? trim(run([RAY, '--version'], 10)['output']) : 'not installed';
   $status = $running ? run([RAY, 'status', '--with-ips'], 20)['output'] : '';
-  reply(['running' => $running, 'version' => $version, 'status' => $status, 'warning' => ipv6_warning()]);
+  // When it is down, say why: the tail of what the daemon last printed.
+  $lastlog = $running ? '' : strip_ansi(implode("\n", array_slice(@file(STDOUT_LOG, FILE_IGNORE_NEW_LINES) ?: [], -15)));
+  reply(['running' => $running, 'version' => $version, 'status' => $status, 'lastlog' => $lastlog, 'warning' => ipv6_warning()]);
 
 case 'service':
   $op = $_POST['op'] ?? '';
@@ -101,7 +103,9 @@ case 'create':
 case 'invite':
   $network = $_POST['network'] ?? '';
   if ($network === '') reply(['error' => 'enter a network name']);
-  reply(run([RAY, 'invite', $network]));
+  $argv = [RAY, 'invite', $network, 'create'];
+  if (($_POST['reusable'] ?? '') === 'true') $argv[] = '--reusable';
+  reply(run($argv));
 
 case 'join':
   $code = trim($_POST['code'] ?? '');

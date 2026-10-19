@@ -9,6 +9,13 @@ $cfg = parse_plugin_cfg('rayfish');
 <style>
 .rf-pre{background:var(--background-color,#1c1b1b);color:inherit;border:1px solid #444;border-radius:4px;padding:10px;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace;font-size:1.2rem;margin:6px 0 14px}
 .rf-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-weight:bold;color:#fff}
+.rf-inline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;align-self:flex-start}
+.rf-inline input{margin:0}
+.rf-qr{display:none;flex-wrap:wrap;gap:16px;align-items:center;margin:6px 0 14px}
+.rf-qr-img{background:#fff;border-radius:6px;line-height:0}
+.rf-qr-img svg{width:240px;height:240px}
+.rf-qr-info{flex:1;min-width:240px}
+.rf-qr-info code{display:block;word-break:break-all;margin:6px 0 10px;font-size:1.2rem}
 .rf-up{background:#3c9a40}.rf-down{background:#b33}
 .rf-warn{border-left:4px solid #e69500;padding:6px 10px;margin:8px 0;display:none}
 .rf-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
@@ -35,10 +42,10 @@ _(Enable Rayfish)_:
 :end
 
 _(Daemon status)_:
-: <span id="rf-state" class="rf-badge">…</span> <span id="rf-version"></span>
+: <span class="rf-inline"><span id="rf-state" class="rf-badge">…</span><span id="rf-version"></span></span>
 
 &nbsp;
-: <input type="submit" value="_(Apply)_"><input type="button" value="_(Restart)_" onclick="rfService('restart')"><input type="button" value="_(Stop)_" onclick="rfService('stop')">
+: <span class="rf-inline"><input type="submit" value="_(Apply)_"><input type="button" value="_(Restart)_" onclick="rfService('restart')"><input type="button" value="_(Stop)_" onclick="rfService('stop')"></span>
 </form>
 
 <div id="rf-warn" class="rf-warn"></div>
@@ -58,6 +65,7 @@ _(Daemon status)_:
 <div class="rf-row">
   <strong style="min-width:70px">_(Invite)_</strong>
   <input type="text" id="rf-invite-net" placeholder="network name">
+  <label><input type="checkbox" id="rf-invite-reusable"> _(reusable (several devices))_</label>
   <input type="button" value="_(Mint invite code)_" onclick="rfInvite()">
 </div>
 <div class="rf-row">
@@ -73,12 +81,26 @@ _(Daemon status)_:
   <input type="text" id="rf-cmd" placeholder="e.g. requests home   ·   firewall list   ·   netcheck   ·   --help">
   <input type="button" value="_(Run)_" onclick="rfRun()">
 </div>
+<div id="rf-qr" class="rf-qr">
+  <div id="rf-qr-img" class="rf-qr-img"></div>
+  <div class="rf-qr-info">
+    <strong>_(Scan to join)_</strong><br>
+    _(Scan with the Rayfish app (Join → Scan), or with your phone's camera to open the app directly.)_
+    <code id="rf-qr-code"></code>
+    <span class="rf-inline">
+      <input type="button" value="_(Copy code)_" onclick="rfCopy($('#rf-qr-code').text())">
+      <input type="button" value="_(Copy link)_" onclick="rfCopy('rayfish://join/' + $('#rf-qr-code').text())">
+      <input type="button" value="_(Hide)_" onclick="$('#rf-qr').hide()">
+    </span>
+  </div>
+</div>
 <pre id="rf-output" class="rf-pre">_(Output from the actions above appears here.)_</pre>
 
 <div class="title"><span class="left"><i class="fa fa-file-text-o title"></i>Logs</span>
 <span class="right"><a href="#" onclick="rfLogs();return false"><i class="fa fa-refresh"></i> _(Load logs)_</a></span></div>
 <pre id="rf-logs" class="rf-pre" style="display:none"></pre>
 
+<script src="/plugins/rayfish/js/qrcode.js"></script>
 <script>
 var rfURL = '/plugins/rayfish/include/exec.php';
 
@@ -93,7 +115,32 @@ function rfShow(r) {
   var text = r.error ? 'Error: ' + r.error : (r.output || '(no output)');
   if (r.timed_out) text += '\n\n[timed out]';
   $('#rf-output').text(text);
+  // `ray invite` (and `ray create` for open networks) print a `ray join <code>`
+  // hint; turn that code into a QR the mobile apps can scan.
+  var m = !r.error && /\bray join ([1-9A-HJ-NP-Za-km-z]{20,})/.exec(r.output || '');
+  if (m) rfQr(m[1]);
   rfStatus();
+}
+
+/* rayfish://join/<code> works both in the apps' own scanners and from the
+ * phone camera, which hands the link to the installed app. */
+function rfQr(code) {
+  var qr = qrcode(0, 'M');
+  qr.addData('rayfish://join/' + code);
+  qr.make();
+  $('#rf-qr-img').html(qr.createSvgTag({cellSize: 4, margin: 16, scalable: true}));
+  $('#rf-qr-code').text(code);
+  $('#rf-qr').css('display', 'flex');
+}
+
+function rfCopy(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text);
+  } else {
+    var t = $('<textarea>').val(text).appendTo('body').select();
+    document.execCommand('copy');
+    t.remove();
+  }
 }
 
 function rfBusy(msg) { $('#rf-output').text(msg + '…'); }
@@ -104,7 +151,8 @@ function rfStatus() {
       .toggleClass('rf-up', !!r.running).toggleClass('rf-down', !r.running);
     $('#rf-version').text(r.version || '');
     $('#rf-status').text(r.error ? 'Error: ' + r.error
-      : r.running ? (r.status || '(no networks yet)') : 'The daemon is not running.');
+      : r.running ? (r.status || '(no networks yet)')
+      : 'The daemon is not running.' + (r.lastlog ? '\n\nLast daemon output:\n' + r.lastlog : ''));
     $('#rf-warn').text(r.warning || '').toggle(!!r.warning);
   });
 }
@@ -115,15 +163,21 @@ function rfService(op) {
 }
 
 function rfCreate() {
+  var name = $('#rf-create-name').val().trim();
   rfBusy('Creating network');
-  rfPost({action: 'create', name: $('#rf-create-name').val().trim(),
+  rfPost({action: 'create', name: name,
           hostname: $('#rf-create-host').val().trim(),
-          open: $('#rf-create-open').is(':checked')}, rfShow);
+          open: $('#rf-create-open').is(':checked')}, function(r) {
+    // Ready for the next step: minting an invite for the new network.
+    if (!r.error && r.status === 0 && name) $('#rf-invite-net').val(name);
+    rfShow(r);
+  });
 }
 
 function rfInvite() {
   rfBusy('Minting invite');
-  rfPost({action: 'invite', network: $('#rf-invite-net').val().trim()}, rfShow);
+  rfPost({action: 'invite', network: $('#rf-invite-net').val().trim(),
+          reusable: $('#rf-invite-reusable').is(':checked')}, rfShow);
 }
 
 function rfJoin() {

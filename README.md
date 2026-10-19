@@ -22,7 +22,8 @@ Open **Settings → Rayfish** (under Network Services). From there you can:
 
 - enable, disable, restart or stop the daemon;
 - see `ray status` for every network, including peers and addresses;
-- create a network, mint an invite code, or join with a code from another device;
+- create a network, mint an invite code (shown as a QR code to scan from the Rayfish mobile app
+  or the phone camera), or join with a code from another device;
 - run any other `ray` command (`requests home`, `firewall list`, `netcheck`, `--help` …);
 - read the daemon logs.
 
@@ -58,6 +59,11 @@ the node's identity for good.
 - **The daemon fails with "add TUN IPv6 address".** Rayfish's overlay is IPv6-only. Set
   **Settings → Network Settings → Network protocol** to **IPv4 + IPv6**, then restart Rayfish.
 - **Startup errors** are written to `/var/log/rayfish/stdout.log` and shown on the settings page.
+
+## Credits
+
+QR codes are drawn with [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)
+(MIT, © Kazuhiko Arase), bundled as `source/usr/local/emhttp/plugins/rayfish/js/qrcode.js`.
 
 ## Development
 

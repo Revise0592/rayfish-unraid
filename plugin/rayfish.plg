@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name       "rayfish">
 <!ENTITY author     "revise0592">
-<!ENTITY version    "2026.10.19a">
+<!ENTITY version    "2026.10.19b">
 <!ENTITY launch     "Settings/Rayfish">
 <!ENTITY gitURL     "https://raw.githubusercontent.com/revise0592/rayfish-unraid/main">
 <!ENTITY pluginURL  "&gitURL;/plugin/&name;.plg">
@@ -10,7 +10,7 @@
 <!ENTITY plugdir    "/usr/local/emhttp/plugins/&name;">
 <!ENTITY cfgdir     "/boot/config/plugins/&name;">
 <!ENTITY package    "rayfish-unraid-&version;.txz">
-<!ENTITY packageSHA256 "df460ad9f40fb787023a43d4c1310c6f66507fa8e02f5529c5b45efbf52b0097">
+<!ENTITY packageSHA256 "93421fb0dd814a63a3f4bd0ce5f7058c59d7eb31a6dfef62f9c07481944e0a13">
 <!ENTITY rayVersion "v0.5.10">
 <!ENTITY rayAsset   "ray-linux-x86_64-musl">
 <!ENTITY raySHA256  "d83926b5e48160f309b996b8e93b906c40ed32d9999dd8327e0b2af3d2e6c805">
@@ -20,6 +20,12 @@
         pluginURL="&pluginURL;" support="&support;" icon="sitemap" min="6.12.0">
 
 <CHANGES>
+### 2026.10.19b
+- Show a QR code for new invite codes (`rayfish://join/…`), scannable by the Rayfish mobile apps or the phone camera, with copy buttons.
+- Invites can be made reusable for several devices; creating a network pre-fills the invite form.
+- When the daemon is stopped, the page shows its last output so the failure reason is visible.
+- Fix the status badge and service buttons stretching across the window on Unraid 7.
+
 ### 2026.10.19a
 - Fix blank Settings → Rayfish page (help block used `_help` instead of `_plug`, which broke page parsing).
 
