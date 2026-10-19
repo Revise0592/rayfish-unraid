@@ -1,0 +1,154 @@
+Menu="NetworkServices"
+Title="Rayfish"
+Icon="sitemap"
+Tag="sitemap"
+---
+<?php
+$cfg = parse_plugin_cfg('rayfish');
+?>
+<style>
+.rf-pre{background:var(--background-color,#1c1b1b);color:inherit;border:1px solid #444;border-radius:4px;padding:10px;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace;font-size:1.2rem;margin:6px 0 14px}
+.rf-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-weight:bold;color:#fff}
+.rf-up{background:#3c9a40}.rf-down{background:#b33}
+.rf-warn{border-left:4px solid #e69500;padding:6px 10px;margin:8px 0;display:none}
+.rf-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+.rf-row input[type=text]{width:220px;margin:0}
+#rf-cmd{width:min(560px,100%)}
+</style>
+
+<div class="title"><span class="left"><i class="fa fa-sitemap title"></i>Rayfish service</span></div>
+
+<form markdown="1" name="rayfish_settings" method="POST" action="/update.php" target="progressFrame">
+<input type="hidden" name="#file" value="rayfish/rayfish.cfg">
+<input type="hidden" name="#command" value="/plugins/rayfish/scripts/apply">
+
+_(Enable Rayfish)_:
+: <select name="SERVICE">
+  <?=mk_option($cfg['SERVICE'], 'enable', _('Yes'))?>
+  <?=mk_option($cfg['SERVICE'], 'disable', _('No'))?>
+  </select>
+
+:rayfish_enable_help:
+> Runs the Rayfish mesh VPN daemon (`ray daemon`) whenever the server boots. Your node identity and
+> network memberships are stored on the flash drive under `/boot/config/plugins/rayfish/state`.
+:end
+
+_(Daemon status)_:
+: <span id="rf-state" class="rf-badge">…</span> <span id="rf-version"></span>
+
+&nbsp;
+: <input type="submit" value="_(Apply)_"><input type="button" value="_(Restart)_" onclick="rfService('restart')"><input type="button" value="_(Stop)_" onclick="rfService('stop')">
+</form>
+
+<div id="rf-warn" class="rf-warn"></div>
+
+<div class="title"><span class="left"><i class="fa fa-list title"></i>Networks</span>
+<span class="right"><a href="#" onclick="rfStatus();return false"><i class="fa fa-refresh"></i> _(Refresh)_</a></span></div>
+<pre id="rf-status" class="rf-pre">_(Loading)_…</pre>
+
+<div class="title"><span class="left"><i class="fa fa-plus title"></i>Create, invite, join</span></div>
+<div class="rf-row">
+  <strong style="min-width:70px">_(Create)_</strong>
+  <input type="text" id="rf-create-name" placeholder="network name (e.g. home)">
+  <input type="text" id="rf-create-host" placeholder="hostname (default: <?=htmlspecialchars(gethostname())?>)">
+  <label><input type="checkbox" id="rf-create-open"> _(open network)_</label>
+  <input type="button" value="_(Create)_" onclick="rfCreate()">
+</div>
+<div class="rf-row">
+  <strong style="min-width:70px">_(Invite)_</strong>
+  <input type="text" id="rf-invite-net" placeholder="network name">
+  <input type="button" value="_(Mint invite code)_" onclick="rfInvite()">
+</div>
+<div class="rf-row">
+  <strong style="min-width:70px">_(Join)_</strong>
+  <input type="text" id="rf-join-code" placeholder="invite code or network key">
+  <input type="text" id="rf-join-host" placeholder="hostname (optional)">
+  <input type="button" value="_(Join)_" onclick="rfJoin()">
+</div>
+
+<div class="title"><span class="left"><i class="fa fa-terminal title"></i>Command</span></div>
+<div class="rf-row">
+  <code>ray</code>
+  <input type="text" id="rf-cmd" placeholder="e.g. requests home   ·   firewall list   ·   netcheck   ·   --help">
+  <input type="button" value="_(Run)_" onclick="rfRun()">
+</div>
+<pre id="rf-output" class="rf-pre">_(Output from the actions above appears here.)_</pre>
+
+<div class="title"><span class="left"><i class="fa fa-file-text-o title"></i>Logs</span>
+<span class="right"><a href="#" onclick="rfLogs();return false"><i class="fa fa-refresh"></i> _(Load logs)_</a></span></div>
+<pre id="rf-logs" class="rf-pre" style="display:none"></pre>
+
+<script>
+var rfURL = '/plugins/rayfish/include/exec.php';
+
+function rfPost(data, done) {
+  data.csrf_token = csrf_token;
+  $.post(rfURL, data, done, 'json').fail(function(x) {
+    done({error: 'request failed: ' + x.status + ' ' + x.statusText});
+  });
+}
+
+function rfShow(r) {
+  var text = r.error ? 'Error: ' + r.error : (r.output || '(no output)');
+  if (r.timed_out) text += '\n\n[timed out]';
+  $('#rf-output').text(text);
+  rfStatus();
+}
+
+function rfBusy(msg) { $('#rf-output').text(msg + '…'); }
+
+function rfStatus() {
+  rfPost({action: 'status'}, function(r) {
+    $('#rf-state').text(r.running ? 'Running' : 'Stopped')
+      .toggleClass('rf-up', !!r.running).toggleClass('rf-down', !r.running);
+    $('#rf-version').text(r.version || '');
+    $('#rf-status').text(r.error ? 'Error: ' + r.error
+      : r.running ? (r.status || '(no networks yet)') : 'The daemon is not running.');
+    $('#rf-warn').text(r.warning || '').toggle(!!r.warning);
+  });
+}
+
+function rfService(op) {
+  rfBusy(op.charAt(0).toUpperCase() + op.slice(1) + 'ing the daemon');
+  rfPost({action: 'service', op: op}, rfShow);
+}
+
+function rfCreate() {
+  rfBusy('Creating network');
+  rfPost({action: 'create', name: $('#rf-create-name').val().trim(),
+          hostname: $('#rf-create-host').val().trim(),
+          open: $('#rf-create-open').is(':checked')}, rfShow);
+}
+
+function rfInvite() {
+  rfBusy('Minting invite');
+  rfPost({action: 'invite', network: $('#rf-invite-net').val().trim()}, rfShow);
+}
+
+function rfJoin() {
+  rfBusy('Joining');
+  rfPost({action: 'join', code: $('#rf-join-code').val(),
+          hostname: $('#rf-join-host').val().trim()}, rfShow);
+}
+
+function rfRun() {
+  var args = $('#rf-cmd').val();
+  rfBusy('ray ' + args);
+  rfPost({action: 'run', args: args}, rfShow);
+}
+
+function rfLogs() {
+  $('#rf-logs').show().text('Loading…');
+  rfPost({action: 'logs'}, function(r) {
+    if (r.error) return $('#rf-logs').text('Error: ' + r.error);
+    $('#rf-logs').text((r.logs || '(daemon not running or no logs in the last hour)') +
+      (r.stdout ? '\n\n--- daemon stdout/stderr ---\n' + r.stdout : ''));
+  });
+}
+
+$(function() {
+  $('#rf-cmd').on('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); rfRun(); } });
+  rfStatus();
+  setInterval(rfStatus, 15000);
+});
+</script>

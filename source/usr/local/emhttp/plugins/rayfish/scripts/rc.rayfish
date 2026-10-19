@@ -1,0 +1,114 @@
+#!/bin/bash
+#
+# rc.rayfish: start/stop the Rayfish daemon on Unraid.
+#
+# Unraid has no systemd or /etc/init.d, so `ray up` / `ray install` don't fit.
+# The plugin runs `ray daemon` itself and keeps its config tree on the flash
+# drive: /etc/rayfish (where the daemon and the CLI both look) is a symlink to
+# /boot/config/plugins/rayfish/state, so the node identity and network
+# memberships survive a reboot. The blob store and logs stay in RAM under
+# /var/lib/rayfish and /var/log/rayfish.
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/usr/sbin:/bin:/usr/bin
+NAME=rayfish
+DAEMON=/usr/local/bin/ray
+CFGDIR=/boot/config/plugins/rayfish
+STATEDIR=$CFGDIR/state
+ETCDIR=/etc/rayfish
+PIDFILE=/var/run/rayfish.pid
+LOGFILE=/var/log/rayfish/stdout.log
+
+log() { echo "$NAME: $*"; logger -t "$NAME" -- "$*"; }
+
+running() {
+  [ -f "$PIDFILE" ] || return 1
+  local pid
+  pid=$(cat "$PIDFILE" 2>/dev/null)
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+link_state() {
+  mkdir -p "$STATEDIR"
+  if [ -d "$ETCDIR" ] && [ ! -L "$ETCDIR" ]; then
+    # A real directory here means `ray` ran before the plugin set things up
+    # (or someone ran `ray up`). Keep whatever is on the flash; adopt the rest.
+    log "moving existing $ETCDIR into $STATEDIR"
+    cp -an "$ETCDIR"/. "$STATEDIR"/ && rm -rf "$ETCDIR"
+  fi
+  ln -sfn "$STATEDIR" "$ETCDIR"
+}
+
+preflight() {
+  [ -x "$DAEMON" ] || { log "$DAEMON is missing; reinstall the plugin"; return 1; }
+  if [ ! -c /dev/net/tun ]; then
+    modprobe tun 2>/dev/null
+    [ -c /dev/net/tun ] || { log "/dev/net/tun is unavailable (modprobe tun failed)"; return 1; }
+  fi
+  # The overlay is IPv6-only. With Unraid set to "IPv4 only" new interfaces
+  # come up with IPv6 disabled and the daemon cannot address its TUN device.
+  if [ ! -d /proc/sys/net/ipv6 ]; then
+    log "IPv6 is not available in this kernel; Rayfish needs it for its overlay"
+    return 1
+  fi
+  if [ "$(cat /proc/sys/net/ipv6/conf/default/disable_ipv6 2>/dev/null)" = "1" ]; then
+    log "warning: IPv6 is disabled for new interfaces (net.ipv6.conf.default.disable_ipv6=1); the daemon may fail to bring up rayfish0"
+  fi
+  return 0
+}
+
+do_start() {
+  if running; then
+    echo "$NAME is already running"
+    return 0
+  fi
+  preflight || return 1
+  link_state
+  mkdir -p "$(dirname "$LOGFILE")"
+  log "starting"
+  NO_COLOR=1 nohup "$DAEMON" daemon >>"$LOGFILE" 2>&1 </dev/null &
+  echo $! >"$PIDFILE"
+  # Give it a moment so a TUN or config failure shows up here, not later.
+  for _ in 1 2 3 4 5; do
+    sleep 1
+    running || { log "daemon exited during startup; see $LOGFILE"; tail -n 20 "$LOGFILE"; rm -f "$PIDFILE"; return 1; }
+  done
+  log "started (pid $(cat "$PIDFILE"))"
+}
+
+do_stop() {
+  if running; then
+    log "stopping"
+    local pid i=0
+    pid=$(cat "$PIDFILE")
+    kill "$pid" 2>/dev/null
+    while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 30 ]; do
+      sleep 1
+      i=$((i + 1))
+    done
+    kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+  else
+    echo "$NAME is not running"
+  fi
+  rm -f "$PIDFILE"
+  # Undo DNS and exit-node changes if the daemon died without its own teardown.
+  [ -x "$DAEMON" ] && "$DAEMON" daemon --cleanup >>"$LOGFILE" 2>&1
+  return 0
+}
+
+case "$1" in
+  start) do_start ;;
+  stop) do_stop ;;
+  restart) do_stop; sleep 1; do_start ;;
+  status)
+    if running; then
+      echo "$NAME is running (pid $(cat "$PIDFILE"))"
+      exit 0
+    fi
+    echo "$NAME is not running"
+    exit 3
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status}" >&2
+    exit 1
+    ;;
+esac

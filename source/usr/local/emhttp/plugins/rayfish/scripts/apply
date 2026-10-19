@@ -1,0 +1,11 @@
+#!/bin/bash
+# Run by /update.php after the settings form is saved: start or stop the
+# daemon to match SERVICE in rayfish.cfg.
+CFG=/boot/config/plugins/rayfish/rayfish.cfg
+SERVICE=enable
+[ -f "$CFG" ] && source "$CFG"
+if [ "$SERVICE" = "enable" ]; then
+  /etc/rc.d/rc.rayfish start
+else
+  /etc/rc.d/rc.rayfish stop
+fi

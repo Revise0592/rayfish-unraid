@@ -1,0 +1,95 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name       "rayfish">
+<!ENTITY author     "revise0592">
+<!ENTITY version    "2026.10.19">
+<!ENTITY launch     "Settings/Rayfish">
+<!ENTITY gitURL     "https://raw.githubusercontent.com/revise0592/rayfish-unraid/main">
+<!ENTITY pluginURL  "&gitURL;/plugin/&name;.plg">
+<!ENTITY support    "https://github.com/revise0592/rayfish-unraid/issues">
+<!ENTITY plugdir    "/usr/local/emhttp/plugins/&name;">
+<!ENTITY cfgdir     "/boot/config/plugins/&name;">
+<!ENTITY package    "rayfish-unraid-&version;.txz">
+<!ENTITY packageSHA256 "bed6a9680e7a47fd0645fc2e20902a32252803da998201707224764ddce25388">
+<!ENTITY rayVersion "v0.5.10">
+<!ENTITY rayAsset   "ray-linux-x86_64-musl">
+<!ENTITY raySHA256  "d83926b5e48160f309b996b8e93b906c40ed32d9999dd8327e0b2af3d2e6c805">
+]>
+
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;"
+        pluginURL="&pluginURL;" support="&support;" icon="sitemap" min="6.12.0">
+
+<CHANGES>
+### 2026.10.19
+- Initial release: runs the Rayfish v0.5.10 daemon, keeps its identity and networks on the flash drive,
+  and adds a Settings → Rayfish page for status, create / invite / join and arbitrary `ray` commands.
+</CHANGES>
+
+<!-- Clear out downloads from older plugin and Rayfish versions. -->
+<FILE Run="/bin/bash">
+<INLINE>
+find &cfgdir; -maxdepth 1 -type f \( -name 'ray-v*' ! -name 'ray-&rayVersion;-*' \) -delete 2>/dev/null
+find &cfgdir; -maxdepth 1 -type f \( -name 'rayfish-unraid-*.txz' ! -name '&package;' \) -delete 2>/dev/null
+true
+</INLINE>
+</FILE>
+
+<!-- The upstream static (musl) ray binary, cached on the flash drive. -->
+<FILE Name="&cfgdir;/ray-&rayVersion;-x86_64-musl">
+<URL>https://github.com/rayfish/rayfish/releases/download/&rayVersion;/&rayAsset;</URL>
+<SHA256>&raySHA256;</SHA256>
+</FILE>
+
+<!-- The plugin's web page and scripts. -->
+<FILE Name="&cfgdir;/&package;">
+<URL>&gitURL;/archive/&package;</URL>
+<SHA256>&packageSHA256;</SHA256>
+</FILE>
+
+<FILE Run="/bin/bash">
+<INLINE>
+if [ "$(uname -m)" != "x86_64" ]; then
+  echo "Rayfish for Unraid only supports x86_64."
+  exit 1
+fi
+
+# Stop a running daemon first so an upgrade swaps the binary cleanly.
+[ -x /etc/rc.d/rc.rayfish ] &amp;&amp; /etc/rc.d/rc.rayfish stop >/dev/null 2>&amp;1
+
+rm -rf &plugdir;
+tar -xf &cfgdir;/&package; -C / --no-overwrite-dir
+install -m 0755 &cfgdir;/ray-&rayVersion;-x86_64-musl /usr/local/bin/ray
+ln -sf &plugdir;/scripts/rc.rayfish /etc/rc.d/rc.rayfish
+mkdir -p &cfgdir;/state
+[ -f &cfgdir;/rayfish.cfg ] || cp &plugdir;/default.cfg &cfgdir;/rayfish.cfg
+
+source &cfgdir;/rayfish.cfg
+if [ "$SERVICE" = "enable" ]; then
+  /etc/rc.d/rc.rayfish start
+fi
+
+echo ""
+echo "----------------------------------------------------------------"
+echo " Rayfish &rayVersion; installed (plugin &version;)."
+echo " Open Settings -> Rayfish to create or join a network."
+echo "----------------------------------------------------------------"
+echo ""
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+[ -x /etc/rc.d/rc.rayfish ] &amp;&amp; /etc/rc.d/rc.rayfish stop
+rm -f /etc/rc.d/rc.rayfish /usr/local/bin/ray
+[ -L /etc/rayfish ] &amp;&amp; rm -f /etc/rayfish
+rm -rf &plugdir; /var/lib/rayfish
+rm -f &cfgdir;/ray-v* &cfgdir;/rayfish-unraid-*.txz
+
+echo ""
+echo "Rayfish removed. Your node identity and networks were kept in"
+echo "&cfgdir;/state; delete that folder to forget them for good."
+echo ""
+</INLINE>
+</FILE>
+
+</PLUGIN>
